@@ -1,135 +1,255 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React from "react";
+import { Link, NavLink } from "react-router-dom";
 import {
-  Home, Trophy, Radio, Users, BarChart3, Settings,
-  X, Zap, Shield, ChevronRight, Star, LogOut
-} from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+  Zap,
+  Home,
+  Trophy,
+  Radio,
+  Users,
+  CreditCard,
+  Plus,
+  Video,
+  LayoutDashboard,
+  Shield,
+  LogIn,
+  UserPlus,
+  User,
+  LogOut,
+  Swords,
+} from "lucide-react";
 
-const navItems = [
-  { icon: Home, label: 'Home', path: '/' },
-  { icon: Trophy, label: 'Competitions', path: '/competitions' },
-  { icon: Radio, label: 'Live Streams', path: '/streams' },
-  { icon: Users, label: 'Teams', path: '/teams' },
-  { icon: Star, label: 'Pricing', path: '/pricing' },
+const baseNavItems = [
+  { label: "Home", to: "/", icon: Home },
+  { label: "Competitions", to: "/competitions", icon: Trophy },
+  { label: "Streams", to: "/streams", icon: Radio },
+  { label: "Teams", to: "/teams", icon: Users },
+  { label: "Pricing", to: "/pricing", icon: CreditCard },
 ];
 
-const creatorItems = [
-  { icon: Zap, label: 'Creator Studio', path: '/creator-dashboard' },
-  { icon: Radio, label: 'Go Live', path: '/go-live' },
-];
-
-const organizerItems = [
-  { icon: Trophy, label: 'My Competitions', path: '/organizer-dashboard' },
-  { icon: BarChart3, label: 'Match Center', path: '/match-center' },
-];
-
-const adminItems = [
-  { icon: Shield, label: 'Admin Panel', path: '/admin' },
-];
-
-export default function Sidebar({ profile, user, onClose, isMobile }) {
-  const location = useLocation();
-
-  const isActive = (path) => {
-    if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
-  };
-
-  const NavLink = ({ item }) => (
-    <Link
-      to={item.path}
-      onClick={isMobile ? onClose : undefined}
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-arena-fast group ${
-        isActive(item.path)
-          ? 'bg-foreground text-background'
-          : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-      }`}
-    >
-      <item.icon size={18} className={isActive(item.path) ? '' : 'group-hover:text-foreground'} />
-      <span className="text-sm font-medium">{item.label}</span>
-      {isActive(item.path) && <ChevronRight size={14} className="ml-auto" />}
-    </Link>
-  );
-
-  const SectionLabel = ({ children }) => (
-    <p className="px-3 pt-4 pb-1 text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest">
-      {children}
-    </p>
-  );
+function SidebarLink({ item }) {
+  const Icon = item.icon;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-5 border-b border-border">
-        <div className="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center">
-          <Zap size={16} className="text-background fill-current" />
-        </div>
-        <span className="font-bold text-lg tracking-tight font-heading">ArenaHub</span>
-        {isMobile && (
-          <button onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground transition-arena-fast">
-            <X size={20} />
-          </button>
+    <NavLink
+      to={item.to}
+      end={item.to === "/"}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-arena-fast ${
+          isActive
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+        }`
+      }
+    >
+      <Icon size={17} />
+      <span>{item.label}</span>
+    </NavLink>
+  );
+}
+
+export default function Sidebar({ user, profile, onLogout }) {
+  const isCreator = !!profile?.is_creator;
+  const isOrganizer = !!profile?.is_organizer;
+  const isAdmin = !!profile?.is_admin;
+
+  const displayName =
+    profile?.display_name ||
+    profile?.full_name ||
+    profile?.channel_name ||
+    user?.full_name ||
+    user?.email?.split("@")[0] ||
+    "Arena User";
+
+  const initial =
+    displayName?.[0]?.toUpperCase() ||
+    user?.email?.[0]?.toUpperCase() ||
+    "U";
+
+  return (
+    <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-64 border-r border-border bg-card flex-col z-40">
+      <div className="h-16 flex items-center px-5 border-b border-border">
+        <Link to="/" className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-foreground flex items-center justify-center">
+            <Zap size={18} className="text-background" />
+          </div>
+
+          <div>
+            <p className="font-bold text-lg leading-none font-heading">
+              ArenaHub
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Sports & esports
+            </p>
+          </div>
+        </Link>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <nav className="space-y-1">
+          {baseNavItems.map((item) => (
+            <SidebarLink key={item.to} item={item} />
+          ))}
+        </nav>
+
+        {user && (
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Account
+            </p>
+
+            <SidebarLink
+              item={{
+                label: "Profile",
+                to: "/profile",
+                icon: User,
+              }}
+            />
+
+            <SidebarLink
+              item={{
+                label: "Match Center",
+                to: "/match-center",
+                icon: Swords,
+              }}
+            />
+          </div>
+        )}
+
+        {user && isCreator && (
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Creator
+            </p>
+
+            <SidebarLink
+              item={{
+                label: "Go Live",
+                to: "/go-live",
+                icon: Video,
+              }}
+            />
+
+            <SidebarLink
+              item={{
+                label: "Creator Dashboard",
+                to: "/creator-dashboard",
+                icon: LayoutDashboard,
+              }}
+            />
+          </div>
+        )}
+
+        {user && isOrganizer && (
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Organizer
+            </p>
+
+            <SidebarLink
+              item={{
+                label: "Create Competition",
+                to: "/create-competition",
+                icon: Plus,
+              }}
+            />
+
+            <SidebarLink
+              item={{
+                label: "Organizer Dashboard",
+                to: "/organizer-dashboard",
+                icon: LayoutDashboard,
+              }}
+            />
+          </div>
+        )}
+
+        {user && isAdmin && (
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Admin
+            </p>
+
+            <SidebarLink
+              item={{
+                label: "Admin Panel",
+                to: "/admin",
+                icon: Shield,
+              }}
+            />
+          </div>
+        )}
+
+        {!user && (
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Join
+            </p>
+
+            <SidebarLink
+              item={{
+                label: "Login",
+                to: "/login",
+                icon: LogIn,
+              }}
+            />
+
+            <SidebarLink
+              item={{
+                label: "Register",
+                to: "/register",
+                icon: UserPlus,
+              }}
+            />
+          </div>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-        <SectionLabel>Discover</SectionLabel>
-        {navItems.map(item => <NavLink key={item.path} item={item} />)}
+      <div className="border-t border-border p-3">
+        {user ? (
+          <div className="space-y-3">
+            <Link
+              to="/profile"
+              className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary transition-arena-fast"
+            >
+              <div className="w-9 h-9 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-bold">
+                {initial}
+              </div>
 
-        {profile?.is_creator && (
-          <>
-            <SectionLabel>Creator</SectionLabel>
-            {creatorItems.map(item => <NavLink key={item.path} item={item} />)}
-          </>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">{displayName}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+              </div>
+            </Link>
+
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-arena-fast"
+            >
+              <LogOut size={17} />
+              Logout
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              to="/login"
+              className="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-secondary hover:bg-secondary/80 transition-arena-fast"
+            >
+              Login
+            </Link>
+
+            <Link
+              to="/register"
+              className="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 transition-arena-fast"
+            >
+              Sign up
+            </Link>
+          </div>
         )}
-
-        {profile?.is_organizer && (
-          <>
-            <SectionLabel>Organizer</SectionLabel>
-            {organizerItems.map(item => <NavLink key={item.path} item={item} />)}
-          </>
-        )}
-
-        {profile?.is_admin && (
-          <>
-            <SectionLabel>Admin</SectionLabel>
-            {adminItems.map(item => <NavLink key={item.path} item={item} />)}
-          </>
-        )}
-      </nav>
-
-      {/* User Profile Footer */}
-      {user && (
-        <div className="p-3 border-t border-border space-y-0.5">
-          <Link
-            to="/profile"
-            onClick={isMobile ? onClose : undefined}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary transition-arena-fast group"
-          >
-            <div className="w-8 h-8 rounded-full bg-foreground/10 flex items-center justify-center text-sm font-semibold text-foreground">
-              {profile?.display_name?.[0] || user?.full_name?.[0] || 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">{profile?.display_name || user?.full_name || 'User'}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {profile?.is_creator && profile?.is_organizer ? 'Creator · Organizer' :
-                 profile?.is_creator ? 'Creator' :
-                 profile?.is_organizer ? 'Organizer' : 'Viewer'}
-              </p>
-            </div>
-            <Settings size={14} className="text-muted-foreground group-hover:text-foreground transition-arena-fast" />
-          </Link>
-          <button
-            onClick={() => base44.auth.logout('/landing')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-arena-fast"
-          >
-            <LogOut size={16} />
-            <span className="text-sm font-medium">Log out</span>
-          </button>
-        </div>
-      )}
-    </div>
+      </div>
+    </aside>
   );
 }

@@ -1,48 +1,45 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import React from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { ShieldAlert } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function AuthGuard({ children, adminOnly = false }) {
-  const navigate = useNavigate();
-  const [status, setStatus] = useState('checking'); // checking | allowed | denied
-  const [profile, setProfile] = useState(null);
+  const location = useLocation();
+  const { user, profile, isLoadingAuth } = useAuth();
 
-  useEffect(() => {
-    const check = async () => {
-      const isAuth = await base44.auth.isAuthenticated().catch(() => false);
-      if (!isAuth) {
-        sessionStorage.setItem('arena_intended_dest', window.location.pathname);
-        navigate('/login', { replace: true });
-        return;
-      }
-      if (adminOnly) {
-        const me = await base44.auth.me().catch(() => null);
-        if (!me) { navigate('/login', { replace: true }); return; }
-        const profiles = await base44.entities.UserProfile.filter({ user_id: me.id }).catch(() => []);
-        const p = profiles[0] || null;
-        setProfile(p);
-        if (!p?.is_admin) { setStatus('denied'); return; }
-      }
-      setStatus('allowed');
-    };
-    check();
-  }, []);
-
-  if (status === 'checking') {
+  if (isLoadingAuth) {
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Checking access...</p>
+        </div>
       </div>
     );
   }
 
-  if (status === 'denied') {
+  if (!user) {
+    sessionStorage.setItem(
+      "arena_intended_dest",
+      location.pathname + location.search
+    );
+
+    return <Navigate to="/login" replace />;
+  }
+
+  if (adminOnly && !profile?.is_admin) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-center px-6">
-        <div className="text-4xl mb-4">🔒</div>
-        <h2 className="text-xl font-bold font-heading mb-2">Access Denied</h2>
-        <p className="text-muted-foreground text-sm max-w-sm">
-          You need admin permissions to view this page.
+      <div className="max-w-xl mx-auto py-24 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert size={26} />
+        </div>
+
+        <h1 className="text-2xl font-bold font-heading mb-2">
+          Access Denied
+        </h1>
+
+        <p className="text-muted-foreground text-sm">
+          You do not have permission to access this page.
         </p>
       </div>
     );

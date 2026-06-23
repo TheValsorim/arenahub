@@ -1,62 +1,78 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Zap, LogIn, LogOut, Eye, EyeOff } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { ensureUserProfile } from '@/lib/ensureUserProfile';
-import GoogleIcon from '@/components/GoogleIcon';
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Zap, LogIn, LogOut, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import GoogleIcon from "@/components/GoogleIcon";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [isAuth, setIsAuth] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [authUser, setAuthUser] = useState(null);
+  const { user, profile, isLoadingAuth, signIn, signOut } = useAuth();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const auth = await base44.auth.isAuthenticated().catch(() => false);
-        setIsAuth(auth);
-        if (auth) {
-          const me = await base44.auth.me().catch(() => null);
-          setAuthUser(me);
-        }
-      } finally {
-        setChecking(false);
-      }
-    };
-    check();
-  }, []);
+    if (!isLoadingAuth && user) {
+      // Ako je korisnik već ulogovan, ostavljamo mu ekran "already logged in"
+      // umesto automatskog redirecta.
+    }
+  }, [isLoadingAuth, user]);
+
+  const getRedirectPath = () => {
+    const intended = sessionStorage.getItem("arena_intended_dest");
+    sessionStorage.removeItem("arena_intended_dest");
+    return intended || "/";
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError('');
+
+    setError("");
     setLoading(true);
-    try {
-      await base44.auth.loginViaEmailPassword(email, password);
-      await ensureUserProfile();
-      window.location.href = '/';
-    } catch (err) {
-      setError('Incorrect email or password. If you signed up with Google, use "Continue with Google" below.');
-    } finally {
+
+    const { error } = await signIn({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError("Incorrect email or password.");
       setLoading(false);
+      return;
+    }
+
+    navigate(getRedirectPath(), { replace: true });
+  };
+
+  const handleGoogleLogin = async () => {
+    setError("");
+    setGoogleLoading(true);
+
+    const redirectTo = `${window.location.origin}/`;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+      },
+    });
+
+    if (error) {
+      setError(error.message || "Google login failed.");
+      setGoogleLoading(false);
     }
   };
 
-  const handleGoogleLogin = () => {
-    base44.auth.loginWithProvider('google', '/');
+  const handleLogout = async () => {
+    await signOut("/landing");
   };
 
-  const handleLogout = () => {
-    base44.auth.logout('/landing');
-  };
-
-  if (checking) {
+  if (isLoadingAuth) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
@@ -71,9 +87,15 @@ export default function Login() {
           <div className="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center">
             <Zap size={16} className="text-background" />
           </div>
-          <span className="font-bold text-lg tracking-tight font-heading">ArenaHub</span>
+          <span className="font-bold text-lg tracking-tight font-heading">
+            ArenaHub
+          </span>
         </Link>
-        <Link to="/register" className="text-sm text-muted-foreground hover:text-foreground transition-arena-fast">
+
+        <Link
+          to="/register"
+          className="text-sm text-muted-foreground hover:text-foreground transition-arena-fast"
+        >
           Create account →
         </Link>
       </nav>
@@ -81,20 +103,27 @@ export default function Login() {
       <div className="flex-1 flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-md">
           <div className="arena-card-elevated p-8">
-
-            {isAuth ? (
+            {user ? (
               <div className="text-center">
                 <div className="w-14 h-14 rounded-full bg-foreground/10 flex items-center justify-center text-2xl font-bold mx-auto mb-4">
-                  {authUser?.full_name?.[0] || 'U'}
+                  {profile?.full_name?.[0] || user.email?.[0]?.toUpperCase() || "U"}
                 </div>
-                <h1 className="text-xl font-bold font-heading mb-1">You are already logged in</h1>
-                <p className="text-muted-foreground text-sm mb-6">{authUser?.email}</p>
+
+                <h1 className="text-xl font-bold font-heading mb-1">
+                  You are already logged in
+                </h1>
+
+                <p className="text-muted-foreground text-sm mb-6">
+                  {user.email}
+                </p>
+
                 <button
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate("/")}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-foreground text-background rounded-lg text-sm font-semibold hover:bg-foreground/90 transition-arena-fast mb-3"
                 >
                   Go to ArenaHub →
                 </button>
+
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-secondary text-foreground rounded-lg text-sm font-medium hover:bg-secondary/80 transition-arena-fast"
@@ -106,7 +135,9 @@ export default function Login() {
             ) : (
               <>
                 <div className="text-center mb-7">
-                  <h1 className="text-2xl font-bold font-heading mb-1">Log in to ArenaHub</h1>
+                  <h1 className="text-2xl font-bold font-heading mb-1">
+                    Log in to ArenaHub
+                  </h1>
                   <p className="text-muted-foreground text-sm">
                     Access your competitions, streams, teams, and creator tools.
                   </p>
@@ -114,30 +145,35 @@ export default function Login() {
 
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Email</label>
+                    <label className="block text-sm font-medium mb-1.5">
+                      Email
+                    </label>
                     <input
                       type="email"
                       required
                       value={email}
-                      onChange={e => setEmail(e.target.value)}
+                      onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
                       className="w-full px-3 py-2.5 text-sm bg-secondary border border-border rounded-lg focus:outline-none focus:border-foreground/40 transition-arena-fast"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Password</label>
+                    <label className="block text-sm font-medium mb-1.5">
+                      Password
+                    </label>
                     <div className="relative">
                       <input
-                        type={showPassword ? 'text' : 'password'}
+                        type={showPassword ? "text" : "password"}
                         required
                         value={password}
-                        onChange={e => setPassword(e.target.value)}
+                        onChange={(e) => setPassword(e.target.value)}
                         placeholder="Your password"
                         className="w-full px-3 py-2.5 text-sm bg-secondary border border-border rounded-lg focus:outline-none focus:border-foreground/40 transition-arena-fast pr-10"
                       />
                       <button
                         type="button"
-                        onClick={() => setShowPassword(v => !v)}
+                        onClick={() => setShowPassword((v) => !v)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
                         {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -149,8 +185,13 @@ export default function Login() {
                     <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
                       <p className="text-sm text-destructive">{error}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        No account?{' '}
-                        <Link to="/register" className="text-foreground font-medium hover:underline">Create one here</Link>
+                        No account?{" "}
+                        <Link
+                          to="/register"
+                          className="text-foreground font-medium hover:underline"
+                        >
+                          Create one here
+                        </Link>
                       </p>
                     </div>
                   )}
@@ -160,10 +201,14 @@ export default function Login() {
                     disabled={loading}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-foreground text-background rounded-lg text-sm font-semibold hover:bg-foreground/90 transition-arena-fast disabled:opacity-60"
                   >
-                    {loading
-                      ? <span className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
-                      : <><LogIn size={15} /> Log In</>
-                    }
+                    {loading ? (
+                      <span className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <LogIn size={15} />
+                        Log In
+                      </>
+                    )}
                   </button>
                 </form>
 
@@ -172,29 +217,48 @@ export default function Login() {
                     <div className="w-full border-t border-border" />
                   </div>
                   <div className="relative flex justify-center text-xs">
-                    <span className="bg-card px-3 text-muted-foreground">or</span>
+                    <span className="bg-card px-3 text-muted-foreground">
+                      or
+                    </span>
                   </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleGoogleLogin}
-                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-secondary border border-border rounded-lg text-sm font-medium hover:bg-secondary/80 transition-arena-fast"
+                  disabled={googleLoading}
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-secondary border border-border rounded-lg text-sm font-medium hover:bg-secondary/80 transition-arena-fast disabled:opacity-60"
                 >
-                  <GoogleIcon className="w-4 h-4" />
-                  Continue with Google
+                  {googleLoading ? (
+                    <span className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <GoogleIcon className="w-4 h-4" />
+                      Continue with Google
+                    </>
+                  )}
                 </button>
 
                 <p className="text-center text-sm text-muted-foreground mt-6">
-                  Don't have an account?{' '}
-                  <Link to="/register" className="text-foreground font-medium hover:underline">Create one</Link>
+                  Don't have an account?{" "}
+                  <Link
+                    to="/register"
+                    className="text-foreground font-medium hover:underline"
+                  >
+                    Create one
+                  </Link>
                 </p>
               </>
             )}
           </div>
 
           <p className="text-center text-xs text-muted-foreground mt-6">
-            <Link to="/landing" className="hover:text-foreground transition-arena-fast">← Back to home</Link>
+            <Link
+              to="/landing"
+              className="hover:text-foreground transition-arena-fast"
+            >
+              ← Back to home
+            </Link>
           </p>
         </div>
       </div>
