@@ -111,9 +111,10 @@ export default function Watch() {
     if (provider !== "livekit") return;
 
     let cancelled = false;
+    let trackPoller = null;
 
     const room = new Room({
-      adaptiveStream: true,
+      adaptiveStream: false,
       dynacast: false,
     });
 
@@ -122,43 +123,88 @@ export default function Watch() {
     const attach = (track) => {
       if (!track) return;
 
-      if (track.kind === Track.Kind.Video) {
+      const kind = track.kind;
+
+      if (kind === "video" || kind === Track.Kind.Video) {
         const v = videoRef.current;
         if (!v) return;
 
         try {
-          track.attach(v);
+          if (track.mediaStreamTrack) {
+            v.srcObject = new MediaStream([track.mediaStreamTrack]);
+          } else {
+            track.attach(v);
+          }
+
+          v.autoplay = true;
+          v.playsInline = true;
+          v.controls = true;
+          v.muted = true;
+
+          v.onloadedmetadata = () => {
+            v.play()
+              .then(() => {
+                setPhase("live");
+                setPlayError("");
+              })
+              .catch(() => {
+                setPhase("tap");
+              });
+          };
+
+          v.onplaying = () => {
+            setPhase("live");
+            setPlayError("");
+          };
+
+          v.play()
+            .then(() => {
+              setPhase("live");
+              setPlayError("");
+            })
+            .catch(() => {
+              setPhase("tap");
+            });
+
+          console.log("[viewer] video attached", {
+            kind: track.kind,
+            sid: track.sid,
+            mediaStreamTrack: !!track.mediaStreamTrack,
+          });
         } catch (err) {
           console.error("[viewer] Video attach failed:", err);
-          return;
+          setPhase("error");
         }
 
-        v.autoplay = true;
-        v.playsInline = true;
-        v.controls = true;
-
-        setPhase("receiving");
-        tryPlay();
         return;
       }
 
-      if (track.kind === Track.Kind.Audio) {
+      if (kind === "audio" || kind === Track.Kind.Audio) {
         const a = audioRef.current;
         if (!a) return;
 
         try {
-          track.attach(a);
+          if (track.mediaStreamTrack) {
+            a.srcObject = new MediaStream([track.mediaStreamTrack]);
+          } else {
+            track.attach(a);
+          }
+
+          a.autoplay = true;
+          a.playsInline = true;
+
+          a.play().catch(() => {
+            // Browser may block autoplay audio until user taps.
+          });
+
+          console.log("[viewer] audio attached", {
+            kind: track.kind,
+            sid: track.sid,
+            mediaStreamTrack: !!track.mediaStreamTrack,
+          });
         } catch (err) {
           console.error("[viewer] Audio attach failed:", err);
-          return;
         }
-
-        a.autoplay = true;
-        a.playsInline = true;
-
-        a.play().catch(() => {
-          // Browser may block autoplay audio until user taps.
-        });
       }
     };
 
@@ -166,9 +212,11 @@ export default function Watch() {
       if (!publication) return;
 
       try {
-        publication.setSubscribed(true);
+        if (typeof publication.setSubscribed === "function") {
+          publication.setSubscribed(true);
+        }
       } catch {
-        // Some publication types may not expose setSubscribed.
+        // noop
       }
 
       if (publication.track) {
@@ -176,8 +224,50 @@ export default function Watch() {
       }
     };
 
+    const scanAndAttachTracks = () => {
+      let foundVideo = false;
+
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((publication) => {
+          try {
+            if (typeof publication.setSubscribed === "function") {
+              publication.setSubscribed(true);
+            }
+          } catch {
+            // noop
+          }
+
+          const isVideoPublication =
+            publication.kind === Track.Kind.Video ||
+            publication.kind === "video" ||
+            publication.source === Track.Source.Camera ||
+            publication.source === "camera";
+
+          if (isVideoPublication) {
+            foundVideo = true;
+
+            console.log("[viewer] video publication found", {
+              participantIdentity: participant.identity,
+              publicationSid: publication.trackSid || publication.sid,
+              kind: publication.kind,
+              source: publication.source,
+              hasTrack: !!publication.track,
+              isSubscribed: publication.isSubscribed,
+            });
+          }
+
+          if (publication.track) {
+            attach(publication.track);
+          }
+        });
+      });
+
+      return foundVideo;
+    };
+
     room.on(RoomEvent.TrackPublished, (publication) => {
       subscribeToPublication(publication);
+      scanAndAttachTracks();
     });
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
@@ -220,23 +310,26 @@ export default function Watch() {
           return;
         }
 
-        // Ako je OBS/Ingress već publishovao video pre nego što je viewer otvorio link,
-        // ovde eksplicitno tražimo sve postojeće trackove.
-        room.remoteParticipants.forEach((participant) => {
-          participant.trackPublications.forEach((publication) => {
-            subscribeToPublication(publication);
-          });
-        });
+        const foundVideo = scanAndAttachTracks();
 
-        const hasRemoteVideo = Array.from(room.remoteParticipants.values()).some(
-          (participant) =>
-            Array.from(participant.trackPublications.values()).some(
-              (publication) =>
-                publication.kind === Track.Kind.Video && publication.track
-            )
-        );
+        trackPoller = setInterval(() => {
+          const found = scanAndAttachTracks();
 
-        if (!hasRemoteVideo) {
+          if (found && videoRef.current?.srcObject) {
+            clearInterval(trackPoller);
+            trackPoller = null;
+            setPhase("live");
+          }
+        }, 500);
+
+        setTimeout(() => {
+          if (trackPoller) {
+            clearInterval(trackPoller);
+            trackPoller = null;
+          }
+        }, 15000);
+
+        if (!foundVideo) {
           setPhase("waiting");
         }
       } catch (err) {
@@ -252,6 +345,11 @@ export default function Watch() {
 
     return () => {
       cancelled = true;
+
+      if (trackPoller) {
+        clearInterval(trackPoller);
+        trackPoller = null;
+      }
 
       try {
         room.disconnect();
@@ -369,6 +467,7 @@ export default function Watch() {
               autoPlay
               playsInline
               controls
+              muted
               className="w-full h-full object-contain"
             />
 
