@@ -22,6 +22,7 @@ export default function Watch() {
 
   const tryPlay = useCallback(() => {
     const v = videoRef.current;
+
     if (!v || !v.srcObject) return;
 
     v.play()
@@ -113,6 +114,7 @@ export default function Watch() {
 
     const room = new Room({
       adaptiveStream: true,
+      dynacast: false,
     });
 
     roomRef.current = room;
@@ -160,6 +162,24 @@ export default function Watch() {
       }
     };
 
+    const subscribeToPublication = (publication) => {
+      if (!publication) return;
+
+      try {
+        publication.setSubscribed(true);
+      } catch {
+        // Some publication types may not expose setSubscribed.
+      }
+
+      if (publication.track) {
+        attach(publication.track);
+      }
+    };
+
+    room.on(RoomEvent.TrackPublished, (publication) => {
+      subscribeToPublication(publication);
+    });
+
     room.on(RoomEvent.TrackSubscribed, (track) => {
       attach(track);
     });
@@ -191,20 +211,20 @@ export default function Watch() {
 
         if (cancelled) return;
 
-        await room.connect(serverUrl, token);
+        await room.connect(serverUrl, token, {
+          autoSubscribe: true,
+        });
 
         if (cancelled) {
           room.disconnect();
           return;
         }
 
-        // If OBS/Ingress already published before viewer joined,
-        // attach any existing remote tracks after connect.
+        // Ako je OBS/Ingress već publishovao video pre nego što je viewer otvorio link,
+        // ovde eksplicitno tražimo sve postojeće trackove.
         room.remoteParticipants.forEach((participant) => {
           participant.trackPublications.forEach((publication) => {
-            if (publication.track) {
-              attach(publication.track);
-            }
+            subscribeToPublication(publication);
           });
         });
 
@@ -221,7 +241,10 @@ export default function Watch() {
         }
       } catch (err) {
         console.error("[viewer] LiveKit connect failed", err);
-        if (!cancelled) setPhase("error");
+
+        if (!cancelled) {
+          setPhase("error");
+        }
       }
     };
 
@@ -241,7 +264,7 @@ export default function Watch() {
   const phaseConfig = {
     loading: { label: "Loading stream…", color: "text-muted-foreground" },
     connecting: { label: "Connecting to LiveKit…", color: "text-yellow-400" },
-    waiting: { label: "Waiting for broadcaster…", color: "text-yellow-400" },
+    waiting: { label: "Waiting for video…", color: "text-yellow-400" },
     receiving: { label: "Receiving video…", color: "text-yellow-400" },
     live: { label: "Live", color: "text-emerald-400" },
     tap: { label: "Tap to play", color: "text-white" },
