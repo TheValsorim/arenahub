@@ -9,7 +9,9 @@ const STALE_THRESHOLD_MS = 60000; // 60s without heartbeat = stale
 
 export default function Watch() {
   const { public_share_id } = useParams();
+
   const videoRef = useRef(null);
+  const audioRef = useRef(null);
   const roomRef = useRef(null);
 
   const [stream, setStream] = useState(null);
@@ -34,8 +36,10 @@ export default function Watch() {
 
   const handleTapToPlay = () => {
     const v = videoRef.current;
+    const a = audioRef.current;
 
     roomRef.current?.startAudio().catch(() => {});
+    a?.play().catch(() => {});
 
     if (!v || !v.srcObject) {
       setPlayError("Video is not ready yet. Waiting for stream…");
@@ -114,23 +118,50 @@ export default function Watch() {
     roomRef.current = room;
 
     const attach = (track) => {
-      const v = videoRef.current;
-      if (!v) return;
+      if (!track) return;
 
-      track.attach(v);
+      if (track.kind === Track.Kind.Video) {
+        const v = videoRef.current;
+        if (!v) return;
 
-      v.autoplay = true;
-      v.playsInline = true;
-      v.controls = true;
+        try {
+          track.attach(v);
+        } catch (err) {
+          console.error("[viewer] Video attach failed:", err);
+          return;
+        }
 
-      setPhase("receiving");
-      tryPlay();
+        v.autoplay = true;
+        v.playsInline = true;
+        v.controls = true;
+
+        setPhase("receiving");
+        tryPlay();
+        return;
+      }
+
+      if (track.kind === Track.Kind.Audio) {
+        const a = audioRef.current;
+        if (!a) return;
+
+        try {
+          track.attach(a);
+        } catch (err) {
+          console.error("[viewer] Audio attach failed:", err);
+          return;
+        }
+
+        a.autoplay = true;
+        a.playsInline = true;
+
+        a.play().catch(() => {
+          // Browser may block autoplay audio until user taps.
+        });
+      }
     };
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
-        attach(track);
-      }
+      attach(track);
     });
 
     room.on(RoomEvent.TrackUnsubscribed, (track) => {
@@ -150,9 +181,7 @@ export default function Watch() {
         setPhase("connecting");
 
         const roomName =
-          stream.livekit_room_name ||
-          stream.public_share_id ||
-          stream.id;
+          stream.livekit_room_name || stream.public_share_id || stream.id;
 
         const { serverUrl, token } = await getLiveKitConnection({
           roomName,
@@ -169,7 +198,25 @@ export default function Watch() {
           return;
         }
 
-        if (room.remoteParticipants.size === 0) {
+        // If OBS/Ingress already published before viewer joined,
+        // attach any existing remote tracks after connect.
+        room.remoteParticipants.forEach((participant) => {
+          participant.trackPublications.forEach((publication) => {
+            if (publication.track) {
+              attach(publication.track);
+            }
+          });
+        });
+
+        const hasRemoteVideo = Array.from(room.remoteParticipants.values()).some(
+          (participant) =>
+            Array.from(participant.trackPublications.values()).some(
+              (publication) =>
+                publication.kind === Track.Kind.Video && publication.track
+            )
+        );
+
+        if (!hasRemoteVideo) {
           setPhase("waiting");
         }
       } catch (err) {
@@ -301,6 +348,8 @@ export default function Watch() {
               controls
               className="w-full h-full object-contain"
             />
+
+            <audio ref={audioRef} autoPlay playsInline />
 
             {phase === "tap" && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60">
