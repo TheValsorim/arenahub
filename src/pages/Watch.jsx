@@ -13,6 +13,7 @@ export default function Watch() {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const roomRef = useRef(null);
+  const videoContainerRef = useRef(null);
 
   const attachedVideoTrackIdRef = useRef(null);
   const attachedAudioTrackIdRef = useRef(null);
@@ -26,7 +27,7 @@ export default function Watch() {
   const tryPlay = useCallback(() => {
     const v = videoRef.current;
 
-    if (!v || !v.srcObject) return;
+    if (!v) return;
 
     v.play()
       .then(() => {
@@ -45,7 +46,7 @@ export default function Watch() {
     roomRef.current?.startAudio().catch(() => {});
     a?.play().catch(() => {});
 
-    if (!v || !v.srcObject) {
+    if (!v) {
       setPlayError("Video is not ready yet. Waiting for stream…");
       return;
     }
@@ -132,37 +133,41 @@ export default function Watch() {
       const kind = track.kind;
 
       if (kind === "video" || kind === Track.Kind.Video) {
-        const v = videoRef.current;
-        if (!v) return;
+        const container = videoContainerRef.current;
+        if (!container) return;
 
         const trackId =
           track.sid ||
-          track.mediaStreamTrack?.id ||
           track.trackSid ||
+          track.mediaStreamTrack?.id ||
           "video-track";
 
-        if (attachedVideoTrackIdRef.current === trackId && v.srcObject) {
+        if (attachedVideoTrackIdRef.current === trackId) {
           return;
         }
 
         attachedVideoTrackIdRef.current = trackId;
 
         try {
-          track.attach(v);
+          container.innerHTML = "";
 
-          v.autoplay = true;
-          v.playsInline = true;
-          v.controls = true;
-          v.muted = true;
+          const videoElement = track.attach();
 
-          v.onloadedmetadata = () => {
+          videoElement.autoplay = true;
+          videoElement.playsInline = true;
+          videoElement.controls = true;
+          videoElement.muted = true;
+          videoElement.className = "w-full h-full object-contain";
+
+          videoElement.onloadedmetadata = () => {
             console.log("[viewer] video metadata loaded", {
-              videoWidth: v.videoWidth,
-              videoHeight: v.videoHeight,
-              readyState: v.readyState,
+              videoWidth: videoElement.videoWidth,
+              videoHeight: videoElement.videoHeight,
+              readyState: videoElement.readyState,
             });
 
-            v.play()
+            videoElement
+              .play()
               .then(() => {
                 setPhase("live");
                 setPlayError("");
@@ -172,19 +177,19 @@ export default function Watch() {
               });
           };
 
-          v.onplaying = () => {
+          videoElement.onplaying = () => {
             console.log("[viewer] video playing", {
-              videoWidth: v.videoWidth,
-              videoHeight: v.videoHeight,
-              readyState: v.readyState,
+              videoWidth: videoElement.videoWidth,
+              videoHeight: videoElement.videoHeight,
+              readyState: videoElement.readyState,
             });
 
             setPhase("live");
             setPlayError("");
           };
 
-          v.onerror = () => {
-            console.error("[viewer] video element error", v.error);
+          videoElement.onerror = () => {
+            console.error("[viewer] video element error", videoElement.error);
           };
 
           const mediaTrack = track.mediaStreamTrack;
@@ -197,7 +202,7 @@ export default function Watch() {
                 muted: mediaTrack.muted,
               });
 
-              v.play().catch(() => {
+              videoElement.play().catch(() => {
                 setPhase("tap");
               });
             };
@@ -209,9 +214,19 @@ export default function Watch() {
             };
           }
 
-          v.play()
+          container.appendChild(videoElement);
+          videoRef.current = videoElement;
+
+          videoElement
+            .play()
             .then(() => {
-              if (v.videoWidth > 0 && v.videoHeight > 0) {
+              console.log("[viewer] video play requested", {
+                videoWidth: videoElement.videoWidth,
+                videoHeight: videoElement.videoHeight,
+                readyState: videoElement.readyState,
+              });
+
+              if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
                 setPhase("live");
                 setPlayError("");
               }
@@ -220,7 +235,7 @@ export default function Watch() {
               setPhase("tap");
             });
 
-          console.log("[viewer] video attached once", {
+          console.log("[viewer] video element appended", {
             kind: track.kind,
             sid: track.sid,
             mediaStreamTrackId: track.mediaStreamTrack?.id,
@@ -419,6 +434,17 @@ export default function Watch() {
       } catch {
         // noop
       }
+
+      try {
+        if (videoContainerRef.current) {
+          videoContainerRef.current.innerHTML = "";
+        }
+      } catch {
+        // noop
+      }
+
+      videoRef.current = null;
+      roomRef.current = null;
     };
   }, [stream, tryPlay]);
 
@@ -525,14 +551,7 @@ export default function Watch() {
               isPortrait ? "aspect-[9/16]" : "aspect-video"
             }`}
           >
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              controls
-              muted
-              className="w-full h-full object-contain"
-            />
+            <div ref={videoContainerRef} className="w-full h-full" />
 
             <audio ref={audioRef} autoPlay playsInline />
 
